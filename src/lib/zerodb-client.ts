@@ -167,24 +167,42 @@ export class ZeroDBClient {
 
   /**
    * Insert one or more rows into a table.
+   * ZeroDB API accepts one row at a time via `row_data` (dict),
+   * so we iterate if multiple rows are provided.
    */
   async insertRows(params: InsertRowsParams): Promise<Record<string, unknown>> {
-    return this.request('POST', `${this.basePath}/tables/${params.tableName}/rows`, {
-      rows: params.rows,
-    });
+    let lastResult: Record<string, unknown> = {};
+    for (const row of params.rows) {
+      lastResult = await this.request('POST', `${this.basePath}/tables/${params.tableName}/rows`, {
+        row_data: row,
+      });
+    }
+    return lastResult;
   }
 
   /**
    * Query rows from a table with optional filters, ordering, and pagination.
+   * ZeroDB returns { data: [{ row_data: {...} }], total }, we normalize to { rows, total }.
    */
   async queryRows(params: QueryRowsParams): Promise<QueryRowsResponse> {
-    return this.request('POST', `${this.basePath}/tables/${params.tableName}/query`, {
+    const raw = await this.request<{
+      data?: { row_data: Record<string, unknown> }[];
+      rows?: Record<string, unknown>[];
+      total?: number;
+    }>('POST', `${this.basePath}/tables/${params.tableName}/query`, {
       filters: params.filters ?? {},
       order_by: params.orderBy,
       order: params.order ?? 'desc',
       limit: params.limit ?? 100,
       offset: params.offset ?? 0,
     });
+
+    // Normalize: ZeroDB wraps each row in { row_data: ... }
+    const rows = raw.data
+      ? raw.data.map((item) => item.row_data ?? item)
+      : raw.rows ?? [];
+
+    return { rows, total: raw.total ?? rows.length };
   }
 
   // -----------------------------------------------------------------------
