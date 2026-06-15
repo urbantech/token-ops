@@ -1,0 +1,73 @@
+{
+  "name": "@tokenops/mcp-server",
+  "version": "0.1.0",
+  "description": "TokenOps MCP Server - AI Cost Optimization telemetry, analytics, and optimization tools for Claude Code, Cursor, and other MCP-compatible AI assistants",
+  "main": "index.js",
+  "type": "commonjs",
+  "bin": {
+    "tokenops-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "test": "jest --coverage --forceExit",
+    "test:watch": "jest --watch",
+    "lint": "eslint *.js"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "modelcontextprotocol",
+    "tokenops",
+    "ai-cost",
+    "token-usage",
+    "optimization",
+    "telemetry",
+    "claude",
+    "claude-code",
+    "claude-desktop",
+    "cursor",
+    "agent",
+    "llm",
+    "cost-tracking"
+  ],
+  "author": {
+    "name": "AINative Studio",
+    "email": "support@ainative.studio",
+    "url": "https://ainative.studio"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.24.0",
+    "axios": "^1.7.7",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "files": [
+    "index.js",
+    "services.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "index.js",
+      "services.js",
+      "!node_modules/**"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.js"
+    ],
+    "verbose": true
+  }
+}

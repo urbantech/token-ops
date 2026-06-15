@@ -9,6 +9,13 @@
 Goal:
 Connect customer systems to AINative in under 15 minutes.
 
+**Reusable Code:**
+
+* Auth: `AINativeAuthService` (`core/zerodb-frontend/src/services/auth/ainativeAuthService.ts`) — JWT + OAuth with auto-refresh
+* Auth UI: `LoginForm.tsx`, `SignUpForm.tsx`, `OAuthButtons.tsx` (`core/zerodb-frontend/src/components/auth/`)
+* MCP pattern: ZeroDB MCP Server (`core/zerodb-mcp-server/index.js`) — 76+ tools, follow same install pattern
+* MCP rate limiter: `core/src/backend/app/zerodb/services/mcp_rate_limiter.py`
+
 ---
 
 ### Feature 1.1
@@ -31,6 +38,8 @@ So that my systems begin sending telemetry automatically.
 * Validation status shown
 * Success confirmation displayed
 
+**Implementation:** Follow `core/zerodb-mcp-server/` install pattern. Reuse `zerodb-cli` quickstart flow (`core/docs/products/zerodb/guides/ZERODB_CLI_QUICKSTART.md`).
+
 ---
 
 ### Feature 1.2
@@ -51,6 +60,8 @@ So that MCP can authenticate securely.
 * Rotate API key
 * Revoke API key
 * Audit logging enabled
+
+**Implementation:** Reuse `AINativeAuthService` (`core/zerodb-frontend/src/services/auth/ainativeAuthService.ts`). Backend auth already handles API key CRUD via `core/src/backend/app/api/admin/auth.py`. See `docs-site/docs/billing/credits.mdx` for API key patterns.
 
 ---
 
@@ -80,6 +91,8 @@ Support:
 
 Connection health displayed.
 
+**Implementation:** Reuse MCP connector patterns from existing servers (Browser MCP at `core/packages/browser-mcp/`, ZeroMemory write-back tools at `core/zerodb-memory-mcp/src/tools/writeback-tools.js` for Slack, GitHub, Gmail, Notion). Connection health via `zerodb_admin_health` pattern.
+
 ---
 
 # EPIC 2
@@ -88,6 +101,14 @@ Connection health displayed.
 
 Goal:
 Capture AI operational data into ZeroDB.
+
+**Reusable Code:**
+
+* `AIUsageLog` model (`core/src/backend/app/models/ai_usage.py`) — already tracks prompt_tokens, completion_tokens, total_tokens, latency_ms, cost_millicents, provider, model_name
+* `ai_usage.py` endpoint (`core/src/backend/app/api/api_v1/endpoints/ai_usage.py`) — paginated queries + CSV export
+* `agent_resource_usage.py` model (`core/src/backend/app/models/agent_resource_usage.py`) — ResourceType, ResourceUnit
+* ZeroDB event stream (`zerodb_create_event`, `zerodb_list_events`)
+* MCP request logging: `mcp_request_logs` table (queried in `core/src/backend/app/api/admin/billing.py`)
 
 ---
 
@@ -116,6 +137,8 @@ Capture:
 
 Stored in ZeroDB.
 
+**Implementation:** Extend existing `AIUsageLog` model. Use `llm_usage_tracking_service` with tiktoken integration (see `docs/quick-reference/NOUSCODER_TOKEN_TRACKING_QUICK_START.md`). Store in `llm_token_usage` table.
+
 ---
 
 ### Feature 2.2
@@ -141,6 +164,61 @@ Capture:
 * output size
 * token cost
 
+**Implementation:** Reuse `AgentResourceMonitor` (`core/src/backend/app/services/agent/resource_monitor.py`) — already collects CPU/memory metrics to `agent_resource_metrics` table every 60s. Extend with `TaskCostService` (`core/src/backend/app/services/task_cost_service.py`) for per-task cost attribution.
+
+---
+
+### Feature 2.4
+
+Token Spend Classification Engine
+
+#### User Story
+
+As a platform administrator
+
+I want every token spend event classified by work type
+
+So that optimization is targeted to the highest-waste categories.
+
+#### Classification Categories
+
+1. **Updating Specs** — documentation, PRDs, planning artifacts
+2. **Brainstorming Ideas** — creative exploration, research, ideation
+3. **Updating Code** — implementation, refactoring, feature development
+4. **Fixing Issues** — debugging, bug fixes, error resolution
+5. **Batch Commands** — repetitive operations that could be replaced by zero-token scripts
+
+#### Acceptance Criteria
+
+* Every token event tagged with a classification category
+* Classification applied in real-time via prompt/context analysis
+* Classification accuracy > 85% (validated via RLHF feedback)
+* Batch command detection flags repetitive patterns automatically
+* Dashboard shows spend breakdown by category
+* "Script Opportunity" alerts when batch patterns exceed configurable threshold
+
+#### Why Classification Matters
+
+Without classification, optimization is generic ("spend less"). With classification:
+
+* **Specs work** → optimize with template reuse + ZeroMemory caching
+* **Brainstorming** → tolerate higher spend (creative value), but detect when exploration loops
+* **Code updates** → route to cheaper models (code tasks work well on Sonnet/DeepSeek)
+* **Bug fixes** → cache common fix patterns in ZeroMemory to avoid repeat debugging
+* **Batch commands** → **highest ROI**: convert detected patterns into deterministic scripts with zero token cost
+
+#### Implementation
+
+**Reuse:**
+
+* `AIUsageLog` model (`core/src/backend/app/models/ai_usage.py`) — extend with classification field
+* `inference_router.py` (`core/src/backend/app/services/inference_router.py`) — classification-aware model routing
+* `ZeroDBMemoryService` (`core/src/backend/app/services/zerodb_memory_service.py`) — batch pattern detection via semantic search
+* `prompt_optimizer.py` — classification context for targeted refinement
+* Models API free tier (Meta/Cerebras at $0/token) for classification inference
+
+**New Code:** Classification prompt, batch pattern detector, script generation agent, classification dashboard widget.
+
 ---
 
 ### Feature 2.3
@@ -164,6 +242,8 @@ Track:
 * workflow cost
 * team cost
 
+**Implementation:** Reuse `UsageAggregationService` (`core/src/backend/app/services/usage_aggregation_service.py`) — already aggregates api_calls, llm_tokens by provider+model, storage, total_cost. Pricing: $0.002/credit, $0.10/GB-month. Also reuse `AgentCloudBillingService` credit pricing (compute 2/sec, memory_ops 5/op, vector_search 8/query, storage 0.001/byte, a2a 3/msg, postgresql 20/query).
+
 ---
 
 # EPIC 3
@@ -172,6 +252,15 @@ Track:
 
 Goal:
 Create visibility into AI spending.
+
+**Reusable Code:**
+
+* `CostTracker.tsx` (`core/src/backend/admin_dashboard/src/components/CostTracker.tsx`) — per-agent cost breakdown with 10s polling, $5/$10 threshold alerts
+* `UsageIndicator.tsx` (`core/ZeroDB.AINative.Studio/src/components/pricing/UsageIndicator.tsx`) — animated progress bars with 80%/95% warnings
+* `CostComparison.tsx` (`core/ZeroDB.AINative.Studio/src/components/CostComparison.tsx`) — cost comparison table
+* Dashboard charts (`core/zerodb-frontend/src/pages/Dashboard.tsx`) — Recharts Line, Bar, Pie, Area with real-time token usage
+* 34 shadcn/ui components (`core/zerodb-frontend/src/components/ui/`)
+* Admin dashboard pages (`core/ZeroDB.AINative.Studio/src/app/dashboard/analytics/`)
 
 ---
 
@@ -197,6 +286,8 @@ Display:
 * spend by project
 * spend trend
 
+**Implementation:** Compose `CostTracker.tsx` + `UsageIndicator.tsx` + Recharts from `Dashboard.tsx`. Data from `UsageAggregationService.aggregate_user_usage()` which already returns full breakdown by provider+model. Use shadcn/ui `Card`, `Table`, `Tabs` components.
+
 ---
 
 ### Feature 3.2
@@ -220,6 +311,8 @@ Show:
 * unused memory
 * inefficient workflows
 
+**Implementation:** Duplicate prompts via `ZeroDBMemoryService` semantic search. Expensive models from `inference_router.py` `PROVIDER_LIMITS` comparison. Unused memory from ZeroMemory MCP `zerodb_search_memory`. Inefficient workflows from `TaskCostService` delegation tree analysis. Reuse `CostComparison.tsx` re-themed for model cost comparisons.
+
 ---
 
 # EPIC 4
@@ -228,6 +321,13 @@ Show:
 
 Goal:
 Reduce token consumption.
+
+**Reusable Code:**
+
+* `prompt_optimizer.py` (`core/src/backend/app/services/agent/prompt_optimizer.py`) — RLHF-driven prompt refinement, triggers LLM rewrite when avg score < 7.0 over last 5 runs, stores refined prompt in ZeroMemory
+* `rlhf_scorer.py` (`core/src/backend/app/services/agent/rlhf_scorer.py`)
+* `tool_schema_optimizer.py` (`core/src/backend/app/services/tool_schema_optimizer.py`)
+* Token counting: tiktoken integration (see `docs/quick-reference/NOUSCODER_TOKEN_TRACKING_QUICK_START.md`)
 
 ---
 
@@ -256,6 +356,8 @@ Detect:
 * unnecessary context
 * repeated instructions
 
+**Implementation:** Wrap `prompt_optimizer.py` `maybe_refine_agent_prompt()`. Use RLHF scores from `agent_run_log` to identify low-performing prompts. Duplicate detection via `ZeroDBMemoryService` semantic search with confidence threshold. Token counting via tiktoken for verbosity scoring.
+
 ---
 
 ### Feature 4.2
@@ -278,6 +380,8 @@ Generate:
 * token reduction estimate
 * performance estimate
 
+**Implementation:** Use `prompt_optimizer.py` rewrite pipeline (already calls LLM to generate refined prompt). Token reduction calculated via tiktoken before/after comparison. Performance estimate from RLHF historical scores. Store optimized prompts in ZeroMemory for reuse.
+
 ---
 
 # EPIC 5
@@ -286,6 +390,14 @@ Generate:
 
 Goal:
 Reuse intelligence before calling models.
+
+**Reusable Code:**
+
+* `ZeroDBMemoryService` (`core/src/backend/app/services/zerodb_memory_service.py`) — semantic search, deduplication, categories, priority levels, TTL cleanup, export
+* ZeroMemory MCP tools (`core/zerodb-memory-mcp/src/tools/memory-tools.js`) — `zerodb_store_memory`, `zerodb_search_memory`, `zerodb_get_context`, `zerodb_semantic_search`
+* Memory manager utils (`core/zerodb-memory-mcp/src/utils/memory-manager.js`)
+* Auto-context middleware (`core/zerodb-memory-mcp/src/utils/auto-context.js`)
+* Docs: `docs-site/docs/zeromemory/overview.mdx`, `docs/products/zeromemory/architecture/MEMORY_MANAGEMENT_ARCHITECTURE.md`
 
 ---
 
@@ -313,6 +425,8 @@ Return:
 * prior answer
 * memory reference
 
+**Implementation:** Direct call to `ZeroDBMemoryService.semantic_search()` with embedding comparison. Already returns confidence scores. Use auto-context middleware for automatic interception before LLM calls. Memory reference via `zerodb_get_context`.
+
 ---
 
 ### Feature 5.2
@@ -335,6 +449,8 @@ Show:
 * repeated research
 * repeated workflows
 
+**Implementation:** Aggregate `ZeroDBMemoryService` search logs to identify frequently repeated queries. Use `zerodb_semantic_search` to cluster similar memories. Report via existing Recharts dashboard components.
+
 ---
 
 # EPIC 6
@@ -343,6 +459,12 @@ Show:
 
 Goal:
 Reduce context size.
+
+**Reusable Code:**
+
+* Memory manager summarization (`core/zerodb-memory-mcp/src/utils/memory-manager.js`) — prune strategy: hybrid, keep recent 5 messages, auto-embed, summarization enabled
+* Auto-context middleware (`core/zerodb-memory-mcp/src/utils/auto-context.js`)
+* Token counting via tiktoken
 
 ---
 
@@ -366,6 +488,8 @@ Produce:
 * compressed size
 * reduction percentage
 
+**Implementation:** Wrap memory-manager.js summarization with before/after token counting. Use existing prune strategy (hybrid mode with configurable context window of 8192 tokens).
+
 ---
 
 ### Feature 6.2
@@ -388,6 +512,8 @@ Report:
 * wasted context
 * oversized prompts
 
+**Implementation:** Analyze `llm_token_usage` table for prompt_tokens vs completion_tokens ratios. Flag prompts exceeding configurable threshold. Use `UsageIndicator.tsx` with custom thresholds for context waste visualization.
+
 ---
 
 # EPIC 7
@@ -396,6 +522,13 @@ Report:
 
 Goal:
 Use lowest-cost model capable of solving the task.
+
+**Reusable Code:**
+
+* `inference_router.py` (`core/src/backend/app/services/inference_router.py`) — `PROVIDER_LIMITS` with cost_per_1m_input/output. Routes: FREE→Cerebras→Meta→NVIDIA, PAID→DigitalOcean→NVIDIA→Meta, BYOK→user key. MinIO-configurable rate limits with 5-minute cache + fleet jitter.
+* Provider pricing: Cerebras ($0/$0), Meta ($0/$0), NVIDIA NIM ($0.10/$0.10), DigitalOcean ($0.15/$0.60), HuggingFace ($0.20/$0.80)
+* Chat completions endpoint (`core/src/backend/app/api/api_v1/endpoints/chat.py`)
+* Docs: `docs-site/docs/api/chat-completions.mdx`
 
 ---
 
@@ -418,6 +551,8 @@ Recommend:
 * optimal model
 * expected savings
 * confidence score
+
+**Implementation:** Analyze `llm_token_usage` records by model. Compare actual cost against `PROVIDER_LIMITS` for cheaper alternatives. Calculate expected savings as (current_cost - recommended_cost) * projected_volume. Confidence based on task complexity classification from RLHF scores.
 
 ---
 
@@ -445,6 +580,8 @@ Supports:
 * DeepSeek
 * Llama
 
+**Implementation:** Extend `inference_router.py` tiered routing with configurable rules. Already supports provider fallback chains. Add task-type classification to auto-select tier (simple→free, moderate→paid, complex→premium). Expose rules via admin API.
+
 ---
 
 # EPIC 8
@@ -453,6 +590,15 @@ Supports:
 
 Goal:
 Measure agent productivity.
+
+**Reusable Code:**
+
+* `AgentResourceMonitor` (`core/src/backend/app/services/agent/resource_monitor.py`) — CPU/memory metrics per agent, 60s collection interval
+* `AgentCloudBillingService` (`core/src/backend/app/services/agent_cloud_billing_service.py`) — credit pricing for 6 resource types
+* `TaskCostService` (`core/src/backend/app/services/task_cost_service.py`) — recursive delegation cost trees
+* Agent Swarm Monitor (`core/packages/agent-swarm-monitor/`) — `@ainative/agent-swarm-monitor` with Recharts + Framer Motion
+* `CostTracker.tsx` (`core/src/backend/admin_dashboard/src/components/CostTracker.tsx`) — per-agent cost breakdown
+* Observability API: `/api/v1/cloud/observability/metrics/{agent_id}` and `/api/v1/cloud/observability/costs/{agent_id}`
 
 ---
 
@@ -477,6 +623,8 @@ Display:
 * token usage
 * memory usage
 
+**Implementation:** Compose Agent Swarm Monitor UI + `CostTracker.tsx`. Data from observability endpoints (per-agent input/output/total tokens + cost breakdown by resource type). Success rate from RLHF scores. Memory usage from `zerodb_search_memory` stats.
+
 ---
 
 ### Feature 8.2
@@ -499,6 +647,8 @@ Detect:
 * inefficient workflows
 * excessive tool calls
 
+**Implementation:** Analyze `TaskCostService` delegation trees for repeated patterns. Flag workflows where tool_call cost exceeds LLM cost. Use `RealtimeOptimizationMonitor` WebSocket events for live workflow tracking.
+
 ---
 
 # EPIC 9
@@ -507,6 +657,13 @@ Detect:
 
 Goal:
 Create organizational intelligence layer.
+
+**Reusable Code:**
+
+* ZeroDB GraphRAG via vector operations (`core/sdks/python/zerodb_mcp/operations/vectors.py`)
+* ZeroDB MCP vector tools (`zerodb_upsert_vector`, `zerodb_search_vectors`, `zerodb_batch_upsert_vectors`)
+* LangChain embedding integration (`core/sdks/python/zerodb_mcp/langchain_embeddings.py`)
+* Docs: `docs-site/docs/zerodb/vectors.mdx`, `docs-site/docs/zerodb/embeddings.mdx`
 
 ---
 
@@ -536,6 +693,8 @@ Create entities:
 * prompts
 * workflows
 
+**Implementation:** Use ZeroDB vector operations to store entity embeddings. Build relationships via metadata in vector upserts. Use LangChain embedding integration for entity encoding. Query via `zerodb_search_vectors` with metadata filters.
+
 ---
 
 ### Feature 9.2
@@ -558,6 +717,8 @@ Recommend:
 * hidden expertise
 * workflow overlap
 
+**Implementation:** Semantic similarity search across entity vectors to find duplicates. Cluster analysis on workflow embeddings for overlap detection. Surface expertise by analyzing agent interaction patterns stored in ZeroMemory.
+
 ---
 
 # EPIC 10
@@ -566,6 +727,14 @@ Recommend:
 
 Goal:
 Automate consulting deliverables.
+
+**Reusable Code:**
+
+* Recharts (Line, Bar, Pie, Area) from `Dashboard.tsx` (`core/zerodb-frontend/src/pages/Dashboard.tsx`)
+* `InvoiceStats.tsx`, `InvoiceStatusBadge.tsx` (`core/zerodb-frontend/src/components/invoices/`)
+* `UsageAggregationService` for period summaries
+* Airflow DAGs for scheduled exports (`core/services/airflow/dags/`)
+* RLHF weekly export DAG (`core/services/airflow/dags/rlhf_weekly_export.py`)
 
 ---
 
@@ -589,6 +758,8 @@ Generate:
 * optimization summary
 * risks
 * opportunities
+
+**Implementation:** Scheduled agent using AIKit `AgentExecutor`. Pulls data from `UsageAggregationService.aggregate_user_usage()`. Generates report using LLM via Models API. Stores in ZeroDB. Delivers via ZeroMemory write-back tools (email, Slack). Follow Airflow DAG pattern from `rlhf_weekly_export.py`.
 
 ---
 
@@ -614,6 +785,8 @@ Score:
 * automation
 * agent adoption
 
+**Implementation:** Compute scores from existing metrics: governance (policy compliance events), memory (ZeroMemory reuse rate), optimization (token reduction trend), automation (agent vs human task ratio), agent adoption (active agents + RLHF scores). Render via Recharts radar/bar charts with shadcn/ui `Card` layout.
+
 ---
 
 # EPIC 11
@@ -622,6 +795,13 @@ Score:
 
 Goal:
 Scale consulting through software.
+
+**Reusable Code:**
+
+* Admin dashboard structure (`core/ZeroDB.AINative.Studio/src/app/dashboard/`) — 15+ page routes
+* `SystemHealthCard.tsx`, `SystemStatsCard.tsx`, `UserUsagePanel.tsx`, `AllProjectsTable.tsx` (`core/ZeroDB.AINative.Studio/src/components/admin/`)
+* `PricingCard.tsx`, `TrialBanner.tsx`, `UpgradeDialog.tsx` (`core/ZeroDB.AINative.Studio/src/components/pricing/`)
+* AIKit Sidebar (`core/packages/agent-swarm-monitor/components/aikit/AIKitSidebar.tsx`) — collapsible nav with badge support
 
 ---
 
@@ -646,6 +826,8 @@ Display:
 * risks
 * opportunities
 
+**Implementation:** Compose `SystemHealthCard.tsx` (health status) + `CostTracker.tsx` (cost alerts) + `UsageIndicator.tsx` (threshold warnings) into multi-customer view. Use `AIKitSidebar.tsx` for customer navigation. Data from per-customer `UsageAggregationService` queries.
+
 ---
 
 ### Feature 11.2
@@ -668,6 +850,8 @@ Generate:
 * priorities
 * expected savings
 
+**Implementation:** Agent-generated using AIKit `AgentExecutor`. Input: customer's usage data + optimization opportunities + model routing recommendations. Output: prioritized action items with projected savings from `PROVIDER_LIMITS` cost comparisons. Store plans in ZeroMemory for tracking.
+
 ---
 
 # EPIC 12
@@ -676,6 +860,14 @@ Generate:
 
 Goal:
 Replace manual consulting work.
+
+**Reusable Code:**
+
+* AIKit Core (`core/packages/core/`) — `Agent` base class, `AgentExecutor`, `ToolRegistry`, Zod validation
+* LLM Providers (`core/packages/core/src/agents/llm/`) — Anthropic + OpenAI providers with streaming adapters
+* Agent Swarm Monitor (`core/packages/agent-swarm-monitor/`) — real-time monitoring UI
+* Swarm quota service (`core/src/backend/app/services/agent_framework/swarm_quota_service.py`)
+* RLHF tools (`core/packages/core/src/rlhf/`)
 
 ---
 
@@ -690,6 +882,8 @@ Produces:
 * cost findings
 * savings estimates
 
+**Implementation:** AIKit Agent wrapping `UsageAggregationService` + `TaskCostService`. Queries `llm_token_usage` for anomalies (cost spikes, unused models, over-provisioned contexts). Calculates savings via `PROVIDER_LIMITS` model downgrade analysis. Outputs structured findings to ZeroDB.
+
 ---
 
 ### Feature 12.2
@@ -702,6 +896,8 @@ Produces:
 
 * optimized prompts
 * prompt scorecards
+
+**Implementation:** AIKit Agent wrapping `prompt_optimizer.py` `maybe_refine_agent_prompt()`. Reads RLHF scores from `agent_run_log`. Generates scorecards with verbosity score, duplication rate, context efficiency. Stores optimized prompts in ZeroMemory.
 
 ---
 
@@ -716,6 +912,8 @@ Produces:
 * memory recommendations
 * reuse opportunities
 
+**Implementation:** AIKit Agent wrapping `ZeroDBMemoryService`. Analyzes semantic search patterns for frequently repeated queries. Identifies low-confidence memories that could be consolidated. Uses ZeroMemory `zerodb_semantic_search` to cluster related memories. Reports via structured output to ZeroDB.
+
 ---
 
 ### Feature 12.4
@@ -729,6 +927,8 @@ Produces:
 * compliance findings
 * governance recommendations
 
+**Implementation:** AIKit Agent querying ZeroDB event stream for policy violations. Monitors model usage against approved model list. Flags unauthorized API key usage. Checks prompt content against governance rules. Uses RLHF feedback loop for continuous improvement.
+
 ---
 
 ### Feature 12.5
@@ -741,6 +941,8 @@ Produces:
 
 * board-ready reports
 * executive summaries
+
+**Implementation:** AIKit Agent composing outputs from all other agents (Token Auditor findings + Prompt Architect scorecards + Memory Architect recommendations + Governance findings). Generates narrative summary via Models API. Renders charts data for Recharts. Delivers via ZeroMemory write-back tools (email, Slack). Follow Airflow DAG scheduling pattern.
 
 ---
 
