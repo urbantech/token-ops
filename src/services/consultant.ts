@@ -212,13 +212,15 @@ export class ConsultantService {
     try {
       const result = await this.client.queryRows({
         tableName: table,
-        filters: {
-          timestamp_gte: period.start,
-          timestamp_lte: period.end,
-        },
+        filters: {},
         limit: 10_000,
       });
-      return result?.rows ?? [];
+      const rows = result?.rows ?? [];
+      return rows.filter((r) => {
+        const ts = r.timestamp ? String(r.timestamp) : '';
+        if (!ts) return true;
+        return ts >= period.start && ts <= period.end;
+      });
     } catch {
       return [];
     }

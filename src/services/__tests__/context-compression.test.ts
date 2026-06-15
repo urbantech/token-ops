@@ -228,10 +228,7 @@ describe('getContextUtilization', () => {
     expect(mockClient.queryRows).toHaveBeenCalledWith(
       expect.objectContaining({
         tableName: 'prompt_events',
-        filters: expect.objectContaining({
-          timestamp_gte: TIME_RANGE.start,
-          timestamp_lte: TIME_RANGE.end,
-        }),
+        filters: {},
       })
     );
   });

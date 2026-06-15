@@ -259,16 +259,18 @@ export async function getContextUtilization(
 
   const result = await client.queryRows({
     tableName: TABLE_PROMPT_EVENTS,
-    filters: {
-      timestamp_gte: timeRange.start,
-      timestamp_lte: timeRange.end,
-    },
+    filters: {},
     orderBy: 'timestamp',
     order: 'asc',
     limit: 10_000,
   });
 
-  const rows = result?.rows ?? [];
+  const allRows = result?.rows ?? [];
+  const rows = allRows.filter((r) => {
+    const ts = r.timestamp ? String(r.timestamp) : '';
+    if (!ts) return true;
+    return ts >= timeRange.start && ts <= timeRange.end;
+  });
 
   if (rows.length === 0) {
     return {

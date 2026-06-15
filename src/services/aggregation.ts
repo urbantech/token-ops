@@ -93,18 +93,21 @@ export class AggregationService {
     timeRange: AggregationTimeRange,
     extraFilters?: Record<string, unknown>
   ): Promise<Record<string, unknown>[]> {
+    // ZeroDB NoSQL does not support range filters (gte/lte).
+    // Fetch all rows and filter client-side by timestamp.
     const result = await this.client.queryRows({
       tableName: TABLE_COST_EVENTS,
-      filters: {
-        timestamp_gte: timeRange.start,
-        timestamp_lte: timeRange.end,
-        ...extraFilters,
-      },
+      filters: extraFilters ?? {},
       orderBy: 'timestamp',
       order: 'asc',
       limit: 10_000,
     });
-    return toRows(result);
+    const rows = toRows(result);
+    return rows.filter((r) => {
+      const ts = r.timestamp ? String(r.timestamp) : '';
+      if (!ts) return true;
+      return ts >= timeRange.start && ts <= timeRange.end;
+    });
   }
 
   private async fetchPromptRows(
@@ -113,16 +116,18 @@ export class AggregationService {
   ): Promise<Record<string, unknown>[]> {
     const result = await this.client.queryRows({
       tableName: TABLE_PROMPT_EVENTS,
-      filters: {
-        timestamp_gte: timeRange.start,
-        timestamp_lte: timeRange.end,
-        ...extraFilters,
-      },
+      filters: extraFilters ?? {},
       orderBy: 'timestamp',
       order: 'asc',
       limit: 10_000,
     });
-    return toRows(result);
+    const rows = toRows(result);
+    return rows.filter((r) => {
+      const ts = r.timestamp ? String(r.timestamp) : '';
+      if (!ts) return true;
+      return ts >= timeRange.start && ts <= timeRange.end;
+    });
+
   }
 
   // -----------------------------------------------------------------------
