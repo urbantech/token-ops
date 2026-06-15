@@ -1,9 +1,35 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowRight, TrendingDown, CheckCircle2, Sparkles } from 'lucide-react';
 import { cn, formatCurrency, formatTokens } from '@/lib/utils';
 import { mockModelComparisons, type ModelComparison } from '@/lib/mock-data';
+
+// ---------------------------------------------------------------------------
+// Model cost / downgrade reference tables
+// ---------------------------------------------------------------------------
+
+const MODEL_DOWNGRADES: Record<string, { model: string; provider: string; costPer1k: number }> = {
+  'claude-opus-4-6': { model: 'claude-sonnet-4-6', provider: 'Anthropic', costPer1k: 0.006 },
+  'gpt-4o': { model: 'gpt-4o-mini', provider: 'OpenAI', costPer1k: 0.00015 },
+  'claude-sonnet-4-6': { model: 'claude-haiku-3-5', provider: 'Anthropic', costPer1k: 0.00025 },
+};
+
+const MODEL_COSTS: Record<string, number> = {
+  'claude-opus-4-6': 0.015,
+  'claude-sonnet-4-6': 0.006,
+  'gpt-4o': 0.01,
+  'gpt-4o-mini': 0.00015,
+  'claude-haiku-3-5': 0.00025,
+};
+
+const MODEL_PROVIDERS: Record<string, string> = {
+  'claude-opus-4-6': 'Anthropic',
+  'claude-sonnet-4-6': 'Anthropic',
+  'claude-haiku-3-5': 'Anthropic',
+  'gpt-4o': 'OpenAI',
+  'gpt-4o-mini': 'OpenAI',
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,17 +67,84 @@ function ProviderBadge({ provider }: { provider: string }) {
 // ---------------------------------------------------------------------------
 
 export function ModelCostComparison({
-  data = mockModelComparisons,
+  data,
   className,
 }: ModelCostComparisonProps) {
+  const [comparisons, setComparisons] = useState<ModelComparison[]>(data ?? mockModelComparisons);
   const [sortKey, setSortKey] = useState<SortKey>('savingsAmount');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
-  const sorted = [...data].sort((a, b) => b[sortKey] - a[sortKey]);
+  useEffect(() => {
+    if (data !== undefined) {
+      setComparisons(data.length > 0 ? data : mockModelComparisons);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(
+      '/api/analytics/spend?start=2026-06-01T00:00:00Z&end=2026-06-30T23:59:59Z&groupBy=model',
+      { signal: controller.signal },
+    )
+      .then((res) => res.json())
+      .then((json) => {
+        const breakdowns: Array<{
+          model: string;
+          totalCost: number;
+          totalTokens: number;
+        }> = json?.data?.breakdowns ?? [];
+        if (breakdowns.length === 0) return;
+        const mapped: ModelComparison[] = breakdowns.map((b) => {
+          const currentCostPer1k = MODEL_COSTS[b.model] ?? 0.01;
+          const currentProvider = MODEL_PROVIDERS[b.model] ?? 'Unknown';
+          const downgrade = MODEL_DOWNGRADES[b.model];
+          if (!downgrade) {
+            return {
+              currentModel: b.model,
+              currentProvider,
+              currentCostPer1k,
+              currentMonthlyTokens: b.totalTokens,
+              currentMonthlyCost: b.totalCost,
+              recommendedModel: b.model,
+              recommendedProvider: currentProvider,
+              recommendedCostPer1k: currentCostPer1k,
+              projectedMonthlyCost: b.totalCost,
+              savingsAmount: 0,
+              savingsPercent: 0,
+              useCase: `${b.model} — already well-optimised`,
+              tradeoffs: 'No alternative recommended — current model is cost-appropriate',
+            };
+          }
+          const projectedMonthlyCost = (b.totalTokens / 1000) * downgrade.costPer1k;
+          const savingsAmount = b.totalCost - projectedMonthlyCost;
+          const savingsPercent = b.totalCost > 0 ? (savingsAmount / b.totalCost) * 100 : 0;
+          return {
+            currentModel: b.model,
+            currentProvider,
+            currentCostPer1k,
+            currentMonthlyTokens: b.totalTokens,
+            currentMonthlyCost: b.totalCost,
+            recommendedModel: downgrade.model,
+            recommendedProvider: downgrade.provider,
+            recommendedCostPer1k: downgrade.costPer1k,
+            projectedMonthlyCost,
+            savingsAmount,
+            savingsPercent,
+            useCase: `${b.model} — consider downgrading for routine tasks`,
+            tradeoffs: `${downgrade.model} handles most tasks at a significantly lower cost`,
+          };
+        });
+        setComparisons(mapped);
+      })
+      .catch(() => {
+        // fetch failed or aborted — keep existing state (mock fallback)
+      });
+    return () => controller.abort();
+  }, [data]);
 
-  const totalCurrentCost = data.reduce((s, r) => s + r.currentMonthlyCost, 0);
-  const totalProjectedCost = data.reduce((s, r) => s + r.projectedMonthlyCost, 0);
-  const totalSavings = data.reduce((s, r) => s + r.savingsAmount, 0);
+  const sorted = [...comparisons].sort((a, b) => b[sortKey] - a[sortKey]);
+
+  const totalCurrentCost = comparisons.reduce((s, r) => s + r.currentMonthlyCost, 0);
+  const totalProjectedCost = comparisons.reduce((s, r) => s + r.projectedMonthlyCost, 0);
+  const totalSavings = comparisons.reduce((s, r) => s + r.savingsAmount, 0);
 
   const SortBtn = ({ field, label }: { field: SortKey; label: string }) => (
     <button

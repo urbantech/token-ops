@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   PieChart,
   Pie,
@@ -12,6 +12,18 @@ import {
 import { PieChart as PieIcon } from 'lucide-react';
 import { cn, formatCurrency, formatTokens } from '@/lib/utils';
 import { mockCategorySpend, type CategorySpend } from '@/lib/mock-data';
+
+// ---------------------------------------------------------------------------
+// Category color map used when mapping API response to CategorySpend
+// ---------------------------------------------------------------------------
+
+const CATEGORY_COLORS: Record<string, string> = {
+  updating_specs: '#3B82F6',
+  brainstorming: '#A855F7',
+  updating_code: '#22C55E',
+  fixing_issues: '#F97316',
+  batch_commands: '#EF4444',
+};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,14 +110,53 @@ function CustomTooltip({ active, payload }: any) {
 // ---------------------------------------------------------------------------
 
 export function SpendByCategory({
-  data = mockCategorySpend,
+  data,
   className,
   onSegmentClick,
 }: SpendByCategoryProps) {
+  const [categories, setCategories] = useState<CategorySpend[]>(data ?? mockCategorySpend);
   const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
   const [selected, setSelected] = useState<CategorySpend | null>(null);
 
-  const total = data.reduce((s, d) => s + d.value, 0);
+  useEffect(() => {
+    if (data !== undefined) {
+      setCategories(data.length > 0 ? data : mockCategorySpend);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(
+      '/api/analytics/spend?start=2026-06-01T00:00:00Z&end=2026-06-30T23:59:59Z&groupBy=classification',
+      { signal: controller.signal },
+    )
+      .then((res) => res.json())
+      .then((json) => {
+        const breakdowns: Array<{
+          category: string;
+          totalCost: number;
+          totalTokens: number;
+          eventCount: number;
+          percentage: number;
+        }> = json?.data?.breakdowns ?? [];
+        if (breakdowns.length === 0) return;
+        setCategories(
+          breakdowns.map((b) => ({
+            name: b.category,
+            label: b.category.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+            value: b.totalCost,
+            tokens: b.totalTokens,
+            count: b.eventCount,
+            color: CATEGORY_COLORS[b.category] ?? '#71717a',
+            fill: CATEGORY_COLORS[b.category] ?? '#71717a',
+          })),
+        );
+      })
+      .catch(() => {
+        // fetch failed or aborted — keep existing state (mock fallback)
+      });
+    return () => controller.abort();
+  }, [data]);
+
+  const total = categories.reduce((s, d) => s + d.value, 0);
 
   const onPieEnter = useCallback((_: unknown, index: number) => {
     setActiveIndex(index);
@@ -117,11 +168,11 @@ export function SpendByCategory({
 
   const onPieClick = useCallback(
     (_: unknown, index: number) => {
-      const item = data[index];
+      const item = categories[index];
       setSelected((prev) => (prev?.name === item.name ? null : item));
       onSegmentClick?.(item);
     },
-    [data, onSegmentClick],
+    [categories, onSegmentClick],
   );
 
   return (
@@ -139,7 +190,7 @@ export function SpendByCategory({
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={data}
+                data={categories}
                 cx="50%"
                 cy="50%"
                 innerRadius={70}
@@ -152,7 +203,7 @@ export function SpendByCategory({
                 onClick={onPieClick}
                 style={{ cursor: 'pointer' }}
               >
-                {data.map((entry, index) => (
+                {categories.map((entry, index) => (
                   <Cell
                     key={entry.name}
                     fill={entry.fill}
@@ -193,7 +244,7 @@ export function SpendByCategory({
 
         {/* Legend + detail */}
         <div className="flex-1 w-full space-y-2">
-          {data.map((item) => {
+          {categories.map((item) => {
             const pct = total > 0 ? (item.value / total) * 100 : 0;
             const isSelected = selected?.name === item.name;
             return (

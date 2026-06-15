@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Terminal, Sparkles, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 import { cn, formatCurrency, formatTokens } from '@/lib/utils';
 import { mockBatchPatterns, type DetectedBatchPattern } from '@/lib/mock-data';
@@ -126,14 +126,70 @@ function PatternRow({
 // ---------------------------------------------------------------------------
 
 export function BatchPatternAlert({
-  patterns = mockBatchPatterns,
+  patterns: patternsProp,
   totalSavings,
   className,
   onGenerateScript,
   onDismiss,
 }: BatchPatternAlertProps) {
+  const [patterns, setPatterns] = useState<DetectedBatchPattern[]>(
+    patternsProp ?? mockBatchPatterns,
+  );
   const [dismissed, setDismissed] = useState(false);
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (patternsProp !== undefined) {
+      setPatterns(patternsProp);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchPatterns() {
+      try {
+        const res = await fetch('/api/analytics/batch-patterns?threshold=3');
+        const json = await res.json();
+
+        if (cancelled) return;
+
+        if (
+          json?.success &&
+          Array.isArray(json.data) &&
+          json.data.length > 0
+        ) {
+          const mapped: DetectedBatchPattern[] = (
+            json.data as Array<{
+              pattern: string;
+              occurrences: number;
+              totalTokens: number;
+              totalCost: number;
+              samplePrompts: string[];
+            }>
+          ).map((item, index) => ({
+            id: `bp-${index}`,
+            pattern: item.pattern,
+            frequency: item.occurrences,
+            totalCost: item.totalCost,
+            totalTokens: item.totalTokens,
+            estimatedSavings: item.totalCost * 0.75,
+            samplePrompts: item.samplePrompts,
+            scriptTemplate: `#!/bin/bash\n# Auto-generated script for: ${item.pattern}\n# TODO: implement automation\n`,
+          }));
+          setPatterns(mapped);
+        }
+        // If empty or not success, keep mock defaults already set.
+      } catch {
+        // Network/parse error — keep mock defaults.
+      }
+    }
+
+    fetchPatterns();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [patternsProp]);
 
   const savings = totalSavings ?? patterns.reduce((s, p) => s + p.estimatedSavings, 0);
   const totalFrequency = patterns.reduce((s, p) => s + p.frequency, 0);

@@ -109,8 +109,45 @@ export function CostTracker({
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    // Simulate API call — replace with real fetch when backend is ready
-    await new Promise((r) => setTimeout(r, 300));
+    try {
+      const res = await fetch(
+        '/api/analytics/spend?start=2026-06-01T00:00:00Z&end=2026-06-30T23:59:59Z&groupBy=model',
+      );
+      if (res.ok) {
+        const json = await res.json();
+        const breakdowns: Array<{
+          category: string;
+          totalCost: number;
+          totalTokens: number;
+          eventCount: number;
+          percentage: number;
+        }> = json?.data?.breakdowns ?? [];
+        if (breakdowns.length > 0) {
+          const rows: AgentCostRow[] = breakdowns.map((bd) => ({
+            name: bd.category,
+            model: bd.category,
+            provider: bd.category.includes('claude') ? 'Anthropic' : 'OpenAI',
+            tokens: bd.totalTokens,
+            promptTokens: Math.round(bd.totalTokens * 0.65),
+            completionTokens: Math.round(bd.totalTokens * 0.35),
+            cost: bd.totalCost,
+            requests: bd.eventCount,
+            classification: Classification.UPDATING_CODE,
+            trend: 'stable' as const,
+            trendPercent: 0,
+          }));
+          const apiTotal: number = json?.data?.totalCost ?? rows.reduce((s, r) => s + r.cost, 0);
+          setAgents(rows);
+          setTotalCost(apiTotal);
+          setAlert(getCostAlert(apiTotal, warningThreshold, errorThreshold));
+          setLastRefreshed(new Date());
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      // fall through to mock data
+    }
     setAgents(mockAgentCosts);
     setTotalCost(mockTotalCost);
     setAlert(getCostAlert(mockTotalCost, warningThreshold, errorThreshold));

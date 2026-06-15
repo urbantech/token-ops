@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Copy,
   Zap,
@@ -155,10 +155,160 @@ function OpportunityCard({
 // ---------------------------------------------------------------------------
 
 export function SavingsOpportunities({
-  opportunities = mockSavingsOpportunities,
+  opportunities: opportunitiesProp,
   className,
   onOpportunityClick,
 }: SavingsOpportunitiesProps) {
+  const [opportunities, setOpportunities] = useState<SavingsOpportunity[]>(
+    opportunitiesProp ?? mockSavingsOpportunities,
+  );
+
+  useEffect(() => {
+    // If a parent passed explicit opportunities, use those directly.
+    if (opportunitiesProp !== undefined) {
+      setOpportunities(opportunitiesProp);
+      return;
+    }
+
+    let cancelled = false;
+
+    async function fetchOpportunities() {
+      const SPEND_URL =
+        '/api/analytics/spend?start=2026-06-01T00:00:00Z&end=2026-06-30T23:59:59Z&groupBy=model';
+      const BATCH_URL = '/api/analytics/batch-patterns?threshold=3';
+      const MEMORY_URL = '/api/memory/stats';
+
+      const [memoryResult, spendResult, batchResult] = await Promise.allSettled([
+        fetch(MEMORY_URL).then((r) => r.json()),
+        fetch(SPEND_URL).then((r) => r.json()),
+        fetch(BATCH_URL).then((r) => r.json()),
+      ]);
+
+      if (cancelled) return;
+
+      // Determine per-category data availability.
+      const memoryData =
+        memoryResult.status === 'fulfilled' && memoryResult.value?.success
+          ? memoryResult.value.data
+          : null;
+
+      const spendData =
+        spendResult.status === 'fulfilled' && spendResult.value?.success
+          ? spendResult.value.data
+          : null;
+
+      const batchData =
+        batchResult.status === 'fulfilled' &&
+        batchResult.value?.success &&
+        Array.isArray(batchResult.value.data) &&
+        batchResult.value.data.length > 0
+          ? (batchResult.value.data as Array<{ totalCost: number }>)
+          : null;
+
+      // If everything failed, keep the mock defaults.
+      if (!memoryData && !spendData && !batchData) return;
+
+      const built: SavingsOpportunity[] = [];
+
+      // duplicate_prompts — from memory stats
+      if (memoryData && typeof memoryData.duplicateCount === 'number') {
+        const dupCount: number = memoryData.duplicateCount;
+        const dupSavings: number = memoryData.estimatedSavings ?? dupCount * 0.06;
+        built.push({
+          id: 'dup-prompts',
+          type: 'duplicate_prompts',
+          title: 'Duplicate Prompts',
+          subtitle: 'Identical or near-identical requests detected',
+          count: dupCount,
+          estimatedSavingsMonthly: dupSavings,
+          priority: dupCount > 100 ? 'high' : dupCount > 30 ? 'medium' : 'low',
+          details: [
+            `${dupCount} duplicate requests identified in the last 30 days`,
+            'Response caching could eliminate the majority of duplicates',
+          ],
+        });
+      } else {
+        built.push(mockSavingsOpportunities.find((o) => o.type === 'duplicate_prompts')!);
+      }
+
+      // expensive_models — from spend breakdown by model
+      if (spendData && Array.isArray(spendData.breakdowns)) {
+        const EXPENSIVE_MODELS = ['claude-opus', 'gpt-4o', 'gpt-4-turbo'];
+        const expensiveCount: number = (spendData.breakdowns as Array<{ category: string }>).filter(
+          (b) => EXPENSIVE_MODELS.some((m) => b.category?.toLowerCase().includes(m)),
+        ).length;
+        const expensiveSavings: number = spendData.totalCost ? spendData.totalCost * 0.45 : 0;
+        built.push({
+          id: 'expensive-models',
+          type: 'expensive_models',
+          title: 'Expensive Models',
+          subtitle: 'Models that could be downgraded for common tasks',
+          count: expensiveCount || 1,
+          estimatedSavingsMonthly: expensiveSavings,
+          priority: expensiveSavings > 20 ? 'high' : expensiveSavings > 5 ? 'medium' : 'low',
+          details: [
+            `${expensiveCount} model(s) with cheaper alternatives detected`,
+            'Downgrading to smaller models can save 40-85% per call',
+          ],
+        });
+      } else {
+        built.push(mockSavingsOpportunities.find((o) => o.type === 'expensive_models')!);
+      }
+
+      // batch_patterns — from batch-patterns API
+      if (batchData) {
+        const batchCount = batchData.length;
+        const batchSavings = batchData.reduce((s, p) => s + p.totalCost * 0.75, 0);
+        built.push({
+          id: 'batch-patterns',
+          type: 'batch_patterns',
+          title: 'Batch Patterns',
+          subtitle: 'Repetitive commands that could be scripted',
+          count: batchCount,
+          estimatedSavingsMonthly: batchSavings,
+          priority: batchCount >= 5 ? 'medium' : 'low',
+          details: [
+            `${batchCount} repetitive command pattern${batchCount !== 1 ? 's' : ''} detected this month`,
+            'Converting to batch scripts reduces per-call overhead by ~60%',
+          ],
+        });
+      } else {
+        built.push(mockSavingsOpportunities.find((o) => o.type === 'batch_patterns')!);
+      }
+
+      // memory_reuse — from memory stats
+      if (memoryData && typeof memoryData.reuseOpportunities === 'number') {
+        const reuseCount: number = memoryData.reuseOpportunities;
+        const reuseSavings: number = memoryData.reuseSavings ?? reuseCount * 0.087;
+        built.push({
+          id: 'memory-reuse',
+          type: 'memory_reuse',
+          title: 'Memory Reuse',
+          subtitle: 'Cached context available but not utilised',
+          count: reuseCount,
+          estimatedSavingsMonthly: reuseSavings,
+          priority: reuseCount > 40 ? 'medium' : 'low',
+          details: [
+            `${reuseCount} conversations reloading identical context from scratch`,
+            'ZeroMemory semantic cache can eliminate repeat context loads',
+          ],
+        });
+      } else {
+        built.push(mockSavingsOpportunities.find((o) => o.type === 'memory_reuse')!);
+      }
+
+      setOpportunities(built);
+    }
+
+    fetchOpportunities().catch(() => {
+      // On unexpected error keep mock data already set in initial state.
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [opportunitiesProp]);
+
   const totalSavings = opportunities.reduce((s, o) => s + o.estimatedSavingsMonthly, 0);
   const highCount = opportunities.filter((o) => o.priority === 'high').length;
 

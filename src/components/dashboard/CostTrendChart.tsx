@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -36,11 +36,36 @@ export interface CostTrendChartProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const RANGE_DATA: Record<TimeRange, CostTrendPoint[]> = {
+const MOCK_RANGE_DATA: Record<TimeRange, CostTrendPoint[]> = {
   '7d': mockDailyTrend,
   '30d': mockWeeklyTrend,
   '90d': mockMonthlyTrend,
 };
+
+const RANGE_GRANULARITY: Record<TimeRange, string> = {
+  '7d': 'day',
+  '30d': 'week',
+  '90d': 'month',
+};
+
+function buildApiUrl(range: TimeRange): string {
+  const now = new Date();
+  const days = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+  const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const granularity = RANGE_GRANULARITY[range];
+  return `/api/analytics/spend?start=${start.toISOString()}&end=${now.toISOString()}&granularity=${granularity}`;
+}
+
+function formatLabel(timestamp: string, granularity: string): string {
+  const date = new Date(timestamp);
+  if (granularity === 'day') {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  if (granularity === 'week') {
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+  return date.toLocaleDateString('en-US', { month: 'short' });
+}
 
 const RANGE_LABELS: Record<TimeRange, string> = {
   '7d': 'Last 7 Days',
@@ -82,7 +107,50 @@ function CustomTooltip({ active, payload, label }: any) {
 
 export function CostTrendChart({ className, defaultRange = '7d' }: CostTrendChartProps) {
   const [range, setRange] = useState<TimeRange>(defaultRange);
-  const data = RANGE_DATA[range];
+  const [rangeData, setRangeData] = useState<Record<TimeRange, CostTrendPoint[]>>(MOCK_RANGE_DATA);
+  const [loadingRange, setLoadingRange] = useState<TimeRange | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const granularity = RANGE_GRANULARITY[range];
+
+    async function fetchRange() {
+      setLoadingRange(range);
+      try {
+        const res = await fetch(buildApiUrl(range));
+        if (!cancelled && res.ok) {
+          const json = await res.json();
+          const dataPoints: Array<{
+            timestamp: string;
+            totalCost: number;
+            totalTokens: number;
+            eventCount: number;
+          }> = json?.data?.dataPoints ?? [];
+          if (dataPoints.length > 0) {
+            const mapped: CostTrendPoint[] = dataPoints.map((dp) => ({
+              timestamp: dp.timestamp,
+              label: formatLabel(dp.timestamp, granularity),
+              total: dp.totalCost,
+              anthropic: dp.totalCost * 0.72,
+              openai: dp.totalCost * 0.28,
+              tokens: dp.totalTokens,
+            }));
+            setRangeData((prev) => ({ ...prev, [range]: mapped }));
+          }
+        }
+      } catch {
+        // silently fall back to mock data already in state
+      } finally {
+        if (!cancelled) setLoadingRange(null);
+      }
+    }
+
+    fetchRange();
+    return () => { cancelled = true; };
+  }, [range]);
+
+  const data = rangeData[range];
+  const isLoading = loadingRange === range;
 
   const total = data.reduce((s, d) => s + d.total, 0);
   const prevTotal = data.length > 1 ? data[0].total : 0;
@@ -124,6 +192,12 @@ export function CostTrendChart({ className, defaultRange = '7d' }: CostTrendChar
       <p className="text-xs text-zinc-500 mb-4">{RANGE_LABELS[range]}</p>
 
       {/* Chart */}
+      <div className="relative">
+        {isLoading && (
+          <div className="absolute inset-0 z-10 rounded-lg bg-zinc-900/60 flex items-center justify-center">
+            <div className="h-2 w-24 bg-zinc-800 rounded animate-pulse" />
+          </div>
+        )}
       <ResponsiveContainer width="100%" height={240}>
         <LineChart data={data} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
@@ -176,6 +250,7 @@ export function CostTrendChart({ className, defaultRange = '7d' }: CostTrendChar
           />
         </LineChart>
       </ResponsiveContainer>
+      </div>
     </div>
   );
 }
