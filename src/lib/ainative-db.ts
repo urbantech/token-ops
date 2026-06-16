@@ -53,9 +53,9 @@ export async function getSpendByModel(start: string, end: string) {
       model,
       provider,
       COALESCE(SUM(cost_usd), 0)::float as total_cost,
-      COALESCE(SUM(total_tokens), 0)::bigint as total_tokens,
-      COALESCE(SUM(prompt_tokens), 0)::bigint as prompt_tokens,
-      COALESCE(SUM(completion_tokens), 0)::bigint as completion_tokens,
+      COALESCE(SUM(total_tokens), 0)::float as total_tokens,
+      COALESCE(SUM(prompt_tokens), 0)::float as prompt_tokens,
+      COALESCE(SUM(completion_tokens), 0)::float as completion_tokens,
       COUNT(*)::int as event_count
     FROM llm_token_usage
     WHERE created_at >= $1 AND created_at <= $2
@@ -77,7 +77,7 @@ export async function getSpendByProvider(start: string, end: string) {
     SELECT
       provider,
       COALESCE(SUM(cost_usd), 0)::float as total_cost,
-      COALESCE(SUM(total_tokens), 0)::bigint as total_tokens,
+      COALESCE(SUM(total_tokens), 0)::float as total_tokens,
       COUNT(*)::int as event_count
     FROM llm_token_usage
     WHERE created_at >= $1 AND created_at <= $2
@@ -108,7 +108,7 @@ export async function getSpendTrend(
     SELECT
       DATE_TRUNC($3, created_at)::text as bucket,
       COALESCE(SUM(cost_usd), 0)::float as total_cost,
-      COALESCE(SUM(total_tokens), 0)::bigint as total_tokens,
+      COALESCE(SUM(total_tokens), 0)::float as total_tokens,
       COUNT(*)::int as event_count
     FROM llm_token_usage
     WHERE created_at >= $1 AND created_at <= $2
@@ -132,9 +132,9 @@ export async function getSpendSummary(start: string, end: string) {
   }>(`
     SELECT
       COALESCE(SUM(cost_usd), 0)::float as total_cost,
-      COALESCE(SUM(total_tokens), 0)::bigint as total_tokens,
-      COALESCE(SUM(prompt_tokens), 0)::bigint as prompt_tokens,
-      COALESCE(SUM(completion_tokens), 0)::bigint as completion_tokens,
+      COALESCE(SUM(total_tokens), 0)::float as total_tokens,
+      COALESCE(SUM(prompt_tokens), 0)::float as prompt_tokens,
+      COALESCE(SUM(completion_tokens), 0)::float as completion_tokens,
       COUNT(*)::int as event_count,
       COUNT(DISTINCT model)::int as unique_models,
       COUNT(DISTINCT provider)::int as unique_providers
@@ -160,7 +160,7 @@ export async function getTopModels(start: string, end: string, limit = 10) {
       model,
       provider,
       COALESCE(SUM(cost_usd), 0)::float as total_cost,
-      COALESCE(SUM(total_tokens), 0)::bigint as total_tokens,
+      COALESCE(SUM(total_tokens), 0)::float as total_tokens,
       COUNT(*)::int as event_count,
       COALESCE(AVG(total_tokens), 0)::int as avg_tokens_per_request
     FROM llm_token_usage
