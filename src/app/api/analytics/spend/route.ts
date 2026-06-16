@@ -7,7 +7,7 @@
  * Query params:
  *   start       — ISO 8601 start of range (required)
  *   end         — ISO 8601 end of range (required)
- *   groupBy     — "model" | "provider" | "team" | "classification" (default: "model")
+ *   groupBy     — "model" | "team" | "classification" (default: "model")
  *   granularity — "hour" | "day" | "week" | "month" (optional, returns trend)
  */
 
@@ -62,30 +62,25 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Grouped breakdown
-    if (groupBy === 'model' || groupBy === 'classification') {
-      // Both use model breakdown from real DB (no classification column in llm_token_usage)
-      const rows = groupBy === 'provider'
-        ? await db.getSpendByProvider(start, end)
-        : await db.getSpendByModel(start, end);
+    // Grouped breakdown — "team" maps to provider, everything else maps to model
+    const useProvider = groupBy === 'team';
 
+    if (useProvider) {
+      const rows = await db.getSpendByProvider(start, end);
       const totalCost = rows.reduce((s, r) => s + r.total_cost, 0);
       const totalTokens = rows.reduce((s, r) => s + r.total_tokens, 0);
-
-      const breakdowns = rows.map((r) => ({
-        category: 'model' in r ? r.model : r.provider,
-        totalCost: r.total_cost,
-        totalTokens: r.total_tokens,
-        eventCount: r.event_count,
-        percentage: totalCost > 0 ? (r.total_cost / totalCost) * 100 : 0,
-        ...('provider' in r && 'model' in r ? { provider: r.provider } : {}),
-      }));
 
       return NextResponse.json({
         success: true,
         data: {
           timeRange: { start, end },
-          breakdowns,
+          breakdowns: rows.map((r) => ({
+            category: r.provider,
+            totalCost: r.total_cost,
+            totalTokens: r.total_tokens,
+            eventCount: r.event_count,
+            percentage: totalCost > 0 ? (r.total_cost / totalCost) * 100 : 0,
+          })),
           totalCost,
           totalTokens,
           totalEvents: rows.reduce((s, r) => s + r.event_count, 0),
@@ -94,8 +89,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Provider breakdown
-    const rows = await db.getSpendByProvider(start, end);
+    // Model or classification breakdown (both use model from real DB)
+    const rows = await db.getSpendByModel(start, end);
     const totalCost = rows.reduce((s, r) => s + r.total_cost, 0);
     const totalTokens = rows.reduce((s, r) => s + r.total_tokens, 0);
 
@@ -104,11 +99,12 @@ export async function GET(request: NextRequest) {
       data: {
         timeRange: { start, end },
         breakdowns: rows.map((r) => ({
-          category: r.provider,
+          category: r.model,
           totalCost: r.total_cost,
           totalTokens: r.total_tokens,
           eventCount: r.event_count,
           percentage: totalCost > 0 ? (r.total_cost / totalCost) * 100 : 0,
+          provider: r.provider,
         })),
         totalCost,
         totalTokens,

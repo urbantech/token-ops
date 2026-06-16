@@ -5,7 +5,7 @@
  * for real AI usage data (llm_token_usage, credit_transactions, etc.)
  */
 
-import { Pool, QueryResult } from 'pg';
+import { Pool } from 'pg';
 
 let pool: Pool | null = null;
 
@@ -32,8 +32,8 @@ export async function query<T = Record<string, unknown>>(
   sql: string,
   params?: unknown[]
 ): Promise<T[]> {
-  const result: QueryResult<T> = await getPool().query(sql, params);
-  return result.rows;
+  const result = await getPool().query(sql, params);
+  return result.rows as T[];
 }
 
 /**
