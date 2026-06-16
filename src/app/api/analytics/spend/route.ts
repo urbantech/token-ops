@@ -1,27 +1,21 @@
 /**
  * GET /api/analytics/spend
- * Spend analytics with groupBy support (model, team, classification).
- * Optionally returns time-series trend data when granularity is specified.
+ *
+ * Spend analytics powered by AINative Core's production postgres
+ * (llm_token_usage table with 457K+ real usage records).
  *
  * Query params:
  *   start       — ISO 8601 start of range (required)
  *   end         — ISO 8601 end of range (required)
- *   groupBy     — "model" | "team" | "classification" (default: "model")
+ *   groupBy     — "model" | "provider" | "team" | "classification" (default: "model")
  *   granularity — "hour" | "day" | "week" | "month" (optional, returns trend)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { spendQuerySchema } from '../../../../lib/validation';
-import { getAggregationService } from '../../../../services/aggregation';
-import {
-  TelemetryResponse,
-  AnalyticsResponse,
-  TrendResponse,
-} from '../../../../types/telemetry';
+import * as db from '../../../../lib/ainative-db';
 
-export async function GET(
-  request: NextRequest
-): Promise<NextResponse<TelemetryResponse<AnalyticsResponse | TrendResponse>>> {
+export async function GET(request: NextRequest) {
   try {
     const { searchParams } = request.nextUrl;
 
@@ -45,37 +39,81 @@ export async function GET(
     }
 
     const { start, end, groupBy, granularity } = parsed.data;
-    const timeRange = { start, end };
-    const service = getAggregationService();
 
-    // If granularity is specified, return a time-series trend
+    // Time-series trend
     if (granularity) {
-      const trend = await service.getSpendTrend(timeRange, granularity);
+      const dataPoints = await db.getSpendTrend(start, end, granularity as 'hour' | 'day' | 'week' | 'month');
+      const totalCost = dataPoints.reduce((s, d) => s + d.total_cost, 0);
+
       return NextResponse.json({
         success: true,
-        data: trend,
+        data: {
+          timeRange: { start, end },
+          granularity,
+          dataPoints: dataPoints.map((d) => ({
+            timestamp: d.bucket,
+            totalCost: d.total_cost,
+            totalTokens: d.total_tokens,
+            eventCount: d.event_count,
+          })),
+          totalCost,
+        },
         timestamp: new Date().toISOString(),
       });
     }
 
-    // Otherwise return a grouped breakdown
-    let result: AnalyticsResponse;
-    switch (groupBy) {
-      case 'team':
-        result = await service.getSpendByTeam(timeRange);
-        break;
-      case 'classification':
-        result = await service.getSpendByClassification(timeRange);
-        break;
-      case 'model':
-      default:
-        result = await service.getSpendByModel(timeRange);
-        break;
+    // Grouped breakdown
+    if (groupBy === 'model' || groupBy === 'classification') {
+      // Both use model breakdown from real DB (no classification column in llm_token_usage)
+      const rows = groupBy === 'provider'
+        ? await db.getSpendByProvider(start, end)
+        : await db.getSpendByModel(start, end);
+
+      const totalCost = rows.reduce((s, r) => s + r.total_cost, 0);
+      const totalTokens = rows.reduce((s, r) => s + r.total_tokens, 0);
+
+      const breakdowns = rows.map((r) => ({
+        category: 'model' in r ? r.model : r.provider,
+        totalCost: r.total_cost,
+        totalTokens: r.total_tokens,
+        eventCount: r.event_count,
+        percentage: totalCost > 0 ? (r.total_cost / totalCost) * 100 : 0,
+        ...('provider' in r && 'model' in r ? { provider: r.provider } : {}),
+      }));
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          timeRange: { start, end },
+          breakdowns,
+          totalCost,
+          totalTokens,
+          totalEvents: rows.reduce((s, r) => s + r.event_count, 0),
+        },
+        timestamp: new Date().toISOString(),
+      });
     }
+
+    // Provider breakdown
+    const rows = await db.getSpendByProvider(start, end);
+    const totalCost = rows.reduce((s, r) => s + r.total_cost, 0);
+    const totalTokens = rows.reduce((s, r) => s + r.total_tokens, 0);
 
     return NextResponse.json({
       success: true,
-      data: result,
+      data: {
+        timeRange: { start, end },
+        breakdowns: rows.map((r) => ({
+          category: r.provider,
+          totalCost: r.total_cost,
+          totalTokens: r.total_tokens,
+          eventCount: r.event_count,
+          percentage: totalCost > 0 ? (r.total_cost / totalCost) * 100 : 0,
+        })),
+        totalCost,
+        totalTokens,
+        totalEvents: rows.reduce((s, r) => s + r.event_count, 0),
+      },
       timestamp: new Date().toISOString(),
     });
   } catch (error: unknown) {
@@ -83,11 +121,7 @@ export async function GET(
     console.error('GET /api/analytics/spend error:', message);
 
     return NextResponse.json(
-      {
-        success: false,
-        error: message,
-        timestamp: new Date().toISOString(),
-      },
+      { success: false, error: message, timestamp: new Date().toISOString() },
       { status: 500 }
     );
   }

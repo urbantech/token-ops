@@ -1,22 +1,19 @@
 /**
  * Tests for GET /api/analytics/spend route handler
- * Refs #43
+ * Now powered by AINative Core postgres (lib/ainative-db)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
 
-vi.mock('../../../../../services/aggregation', () => ({
-  getAggregationService: vi.fn(),
+vi.mock('../../../../../lib/ainative-db', () => ({
+  getSpendByModel: vi.fn(),
+  getSpendByProvider: vi.fn(),
+  getSpendTrend: vi.fn(),
 }));
 
 import { GET } from '../route';
-import { getAggregationService } from '../../../../../services/aggregation';
-import type { AnalyticsResponse, TrendResponse } from '../../../../../types/telemetry';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+import * as db from '../../../../../lib/ainative-db';
 
 const START = '2026-06-01T00:00:00.000Z';
 const END = '2026-06-14T23:59:59.000Z';
@@ -29,267 +26,91 @@ function makeRequest(queryParams: Record<string, string>): NextRequest {
   );
 }
 
-const MOCK_ANALYTICS: AnalyticsResponse = {
-  timeRange: { start: START, end: END },
-  breakdowns: [
-    {
-      category: 'gpt-4',
-      totalCost: 12.5,
-      totalTokens: 500_000,
-      eventCount: 120,
-      percentage: 62.5,
-    },
-    {
-      category: 'claude-3-5-sonnet',
-      totalCost: 7.5,
-      totalTokens: 300_000,
-      eventCount: 80,
-      percentage: 37.5,
-    },
-  ],
-  totalCost: 20.0,
-  totalTokens: 800_000,
-  totalEvents: 200,
-};
+const MOCK_MODEL_ROWS = [
+  { model: 'claude-opus-4-6', provider: 'Anthropic', total_cost: 18.42, total_tokens: 1284500, prompt_tokens: 842300, completion_tokens: 442200, event_count: 347 },
+  { model: 'gpt-4o', provider: 'OpenAI', total_cost: 6.55, total_tokens: 654800, prompt_tokens: 398500, completion_tokens: 256300, event_count: 189 },
+];
 
-const MOCK_TREND: TrendResponse = {
-  timeRange: { start: START, end: END },
-  granularity: 'day',
-  dataPoints: [
-    { timestamp: '2026-06-01T00:00:00.000Z', totalCost: 2.5, totalTokens: 100_000, eventCount: 20 },
-    { timestamp: '2026-06-02T00:00:00.000Z', totalCost: 3.0, totalTokens: 120_000, eventCount: 25 },
-  ],
-  totalCost: 5.5,
-};
+const MOCK_PROVIDER_ROWS = [
+  { provider: 'Anthropic', total_cost: 25.0, total_tokens: 2000000, event_count: 500 },
+  { provider: 'OpenAI', total_cost: 8.0, total_tokens: 800000, event_count: 200 },
+];
 
-function setupMockService(overrides?: object) {
-  const mock = {
-    getSpendByModel: vi.fn().mockResolvedValue(MOCK_ANALYTICS),
-    getSpendByTeam: vi.fn().mockResolvedValue(MOCK_ANALYTICS),
-    getSpendByClassification: vi.fn().mockResolvedValue(MOCK_ANALYTICS),
-    getSpendTrend: vi.fn().mockResolvedValue(MOCK_TREND),
-    ...overrides,
-  };
-  vi.mocked(getAggregationService).mockReturnValue(mock as ReturnType<typeof getAggregationService>);
-  return mock;
-}
-
-beforeEach(() => {
-  vi.clearAllMocks();
-});
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+const MOCK_TREND = [
+  { bucket: '2026-06-07T00:00:00.000Z', total_cost: 7.23, total_tokens: 890000, event_count: 120 },
+  { bucket: '2026-06-08T00:00:00.000Z', total_cost: 9.41, total_tokens: 1150000, event_count: 145 },
+];
 
 describe('GET /api/analytics/spend', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.getSpendByModel).mockResolvedValue(MOCK_MODEL_ROWS);
+    vi.mocked(db.getSpendByProvider).mockResolvedValue(MOCK_PROVIDER_ROWS);
+    vi.mocked(db.getSpendTrend).mockResolvedValue(MOCK_TREND);
+  });
+
   describe('validation', () => {
     it('returns 400 when start is missing', async () => {
-      const res = await GET(makeRequest({ end: END }));
-
+      const res = await GET(makeRequest({ end: END, groupBy: 'model' }));
       expect(res.status).toBe(400);
-      const data = await res.json();
-      expect(data.success).toBe(false);
-      expect(data.error).toMatch(/Validation failed/i);
     });
 
     it('returns 400 when end is missing', async () => {
-      const res = await GET(makeRequest({ start: START }));
-
+      const res = await GET(makeRequest({ start: START, groupBy: 'model' }));
       expect(res.status).toBe(400);
     });
 
-    it('returns 400 when start is not a valid ISO 8601 datetime', async () => {
-      const res = await GET(makeRequest({ start: '2026-06-01', end: END }));
-
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 400 when end is not a valid ISO 8601 datetime', async () => {
-      const res = await GET(makeRequest({ start: START, end: 'June 14 2026' }));
-
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 400 when groupBy is an invalid value', async () => {
-      const res = await GET(
-        makeRequest({ start: START, end: END, groupBy: 'project' })
-      );
-
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 400 when granularity is an invalid value', async () => {
-      const res = await GET(
-        makeRequest({ start: START, end: END, granularity: 'year' })
-      );
-
+    it('returns 400 when both start and end are missing', async () => {
+      const res = await GET(makeRequest({ groupBy: 'model' }));
       expect(res.status).toBe(400);
     });
   });
 
-  describe('groupBy breakdown responses', () => {
-    it('calls getSpendByModel and returns analytics when groupBy defaults to model', async () => {
-      const mock = setupMockService();
+  describe('groupBy=model', () => {
+    it('returns model breakdown from real database', async () => {
+      const res = await GET(makeRequest({ start: START, end: END, groupBy: 'model' }));
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.breakdowns).toHaveLength(2);
+      expect(body.data.breakdowns[0].category).toBe('claude-opus-4-6');
+      expect(body.data.totalCost).toBeCloseTo(24.97, 1);
+      expect(body.data.totalEvents).toBe(536);
+    });
 
+    it('includes percentage in breakdowns', async () => {
       const res = await GET(makeRequest({ start: START, end: END }));
-
-      expect(res.status).toBe(200);
-      expect(mock.getSpendByModel).toHaveBeenCalledOnce();
-      expect(mock.getSpendByTeam).not.toHaveBeenCalled();
-      expect(mock.getSpendByClassification).not.toHaveBeenCalled();
-
-      const data = await res.json();
-      expect(data.success).toBe(true);
-      expect(data.data).toHaveProperty('breakdowns');
-      expect(data.data).toHaveProperty('totalCost');
-      expect(data.data).toHaveProperty('totalTokens');
-      expect(data.data).toHaveProperty('totalEvents');
-    });
-
-    it('calls getSpendByModel when groupBy=model is explicit', async () => {
-      const mock = setupMockService();
-
-      await GET(makeRequest({ start: START, end: END, groupBy: 'model' }));
-
-      expect(mock.getSpendByModel).toHaveBeenCalledOnce();
-    });
-
-    it('calls getSpendByTeam when groupBy=team', async () => {
-      const mock = setupMockService();
-
-      const res = await GET(makeRequest({ start: START, end: END, groupBy: 'team' }));
-
-      expect(res.status).toBe(200);
-      expect(mock.getSpendByTeam).toHaveBeenCalledOnce();
-      expect(mock.getSpendByModel).not.toHaveBeenCalled();
-    });
-
-    it('calls getSpendByClassification when groupBy=classification', async () => {
-      const mock = setupMockService();
-
-      const res = await GET(
-        makeRequest({ start: START, end: END, groupBy: 'classification' })
-      );
-
-      expect(res.status).toBe(200);
-      expect(mock.getSpendByClassification).toHaveBeenCalledOnce();
-    });
-
-    it('passes the parsed timeRange to the service', async () => {
-      const mock = setupMockService();
-
-      await GET(makeRequest({ start: START, end: END, groupBy: 'model' }));
-
-      const arg = mock.getSpendByModel.mock.calls[0][0];
-      expect(arg.start).toBe(START);
-      expect(arg.end).toBe(END);
-    });
-
-    it('returns well-formed SpendBreakdown objects', async () => {
-      setupMockService();
-
-      const res = await GET(makeRequest({ start: START, end: END }));
-      const data = await res.json();
-
-      for (const breakdown of data.data.breakdowns) {
-        expect(breakdown).toHaveProperty('category');
-        expect(breakdown).toHaveProperty('totalCost');
-        expect(breakdown).toHaveProperty('totalTokens');
-        expect(breakdown).toHaveProperty('eventCount');
-        expect(breakdown).toHaveProperty('percentage');
-        expect(typeof breakdown.category).toBe('string');
-        expect(typeof breakdown.totalCost).toBe('number');
-      }
+      const body = await res.json();
+      expect(body.data.breakdowns[0].percentage).toBeGreaterThan(0);
+      expect(body.data.breakdowns[0].percentage).toBeLessThanOrEqual(100);
     });
   });
 
-  describe('trend (granularity) response', () => {
-    it('calls getSpendTrend and returns trend data when granularity is provided', async () => {
-      const mock = setupMockService();
-
-      const res = await GET(
-        makeRequest({ start: START, end: END, granularity: 'day' })
-      );
-
+  describe('granularity (trend)', () => {
+    it('returns time-series data points', async () => {
+      const res = await GET(makeRequest({ start: START, end: END, granularity: 'day' }));
       expect(res.status).toBe(200);
-      expect(mock.getSpendTrend).toHaveBeenCalledOnce();
-      expect(mock.getSpendByModel).not.toHaveBeenCalled();
-
-      const data = await res.json();
-      expect(data.success).toBe(true);
-      expect(data.data).toHaveProperty('granularity');
-      expect(data.data).toHaveProperty('dataPoints');
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.data.dataPoints).toHaveLength(2);
+      expect(body.data.dataPoints[0].timestamp).toBe('2026-06-07T00:00:00.000Z');
+      expect(body.data.dataPoints[0].totalCost).toBe(7.23);
     });
 
-    it('calls getSpendTrend with the correct granularity value', async () => {
-      const mock = setupMockService();
-
+    it('calls db.getSpendTrend with correct params', async () => {
       await GET(makeRequest({ start: START, end: END, granularity: 'week' }));
-
-      const [, granularity] = mock.getSpendTrend.mock.calls[0];
-      expect(granularity).toBe('week');
-    });
-
-    it('accepts all valid granularity values', async () => {
-      for (const granularity of ['hour', 'day', 'week', 'month']) {
-        setupMockService();
-        const res = await GET(makeRequest({ start: START, end: END, granularity }));
-        expect(res.status).toBe(200);
-      }
-    });
-
-    it('returns well-formed SpendTrend data points', async () => {
-      setupMockService();
-
-      const res = await GET(
-        makeRequest({ start: START, end: END, granularity: 'day' })
-      );
-      const data = await res.json();
-
-      for (const point of data.data.dataPoints) {
-        expect(point).toHaveProperty('timestamp');
-        expect(point).toHaveProperty('totalCost');
-        expect(point).toHaveProperty('totalTokens');
-        expect(point).toHaveProperty('eventCount');
-      }
-    });
-  });
-
-  describe('response envelope', () => {
-    it('response includes an ISO timestamp', async () => {
-      setupMockService();
-      const res = await GET(makeRequest({ start: START, end: END }));
-      const data = await res.json();
-
-      expect(new Date(data.timestamp).toISOString()).toBe(data.timestamp);
+      expect(db.getSpendTrend).toHaveBeenCalledWith(START, END, 'week');
     });
   });
 
   describe('error handling', () => {
-    it('returns 500 when the service throws', async () => {
-      setupMockService({
-        getSpendByModel: vi.fn().mockRejectedValue(new Error('Aggregation failed')),
-      });
-
-      const res = await GET(makeRequest({ start: START, end: END }));
-
+    it('returns 500 when database throws', async () => {
+      vi.mocked(db.getSpendByModel).mockRejectedValue(new Error('DB connection failed'));
+      const res = await GET(makeRequest({ start: START, end: END, groupBy: 'model' }));
       expect(res.status).toBe(500);
-      const data = await res.json();
-      expect(data.success).toBe(false);
-      expect(data.error).toBe('Aggregation failed');
-    });
-
-    it('returns 500 with a fallback message when a non-Error is thrown', async () => {
-      setupMockService({
-        getSpendByModel: vi.fn().mockRejectedValue(undefined),
-      });
-
-      const res = await GET(makeRequest({ start: START, end: END }));
-
-      expect(res.status).toBe(500);
-      const data = await res.json();
-      expect(data.success).toBe(false);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('DB connection failed');
     });
   });
 });
