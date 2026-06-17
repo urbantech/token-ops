@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  Trophy,
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/agents', label: 'Agents', icon: Bot },
   { href: '/dashboard/governance', label: 'Governance', icon: ShieldCheck },
   { href: '/dashboard/reports', label: 'Reports', icon: FileBarChart },
+  { href: '/leaderboard', label: 'Savings Leaderboard', icon: Trophy },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings },
 ]
 
