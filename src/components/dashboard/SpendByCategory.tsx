@@ -158,6 +158,28 @@ export function SpendByCategory({
 
   const total = categories.reduce((s, d) => s + d.value, 0);
 
+  // Limit pie chart to top 8 + "Other" bucket for visual clarity
+  const pieData = (() => {
+    if (categories.length <= 10) return categories;
+    const top = categories.slice(0, 8);
+    const rest = categories.slice(8);
+    const otherValue = rest.reduce((s, d) => s + d.value, 0);
+    const otherTokens = rest.reduce((s, d) => s + d.tokens, 0);
+    const otherCount = rest.reduce((s, d) => s + d.count, 0);
+    return [
+      ...top,
+      {
+        name: 'other',
+        label: `Other (${rest.length} models)`,
+        value: otherValue,
+        tokens: otherTokens,
+        count: otherCount,
+        color: '#52525b',
+        fill: '#52525b',
+      },
+    ];
+  })();
+
   const onPieEnter = useCallback((_: unknown, index: number) => {
     setActiveIndex(index);
   }, []);
@@ -168,11 +190,12 @@ export function SpendByCategory({
 
   const onPieClick = useCallback(
     (_: unknown, index: number) => {
-      const item = categories[index];
+      const item = pieData[index];
+      if (!item) return;
       setSelected((prev) => (prev?.name === item.name ? null : item));
       onSegmentClick?.(item);
     },
-    [categories, onSegmentClick],
+    [pieData, onSegmentClick],
   );
 
   return (
@@ -190,7 +213,7 @@ export function SpendByCategory({
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={categories}
+                data={pieData}
                 cx="50%"
                 cy="50%"
                 innerRadius={70}
@@ -203,7 +226,7 @@ export function SpendByCategory({
                 onClick={onPieClick}
                 style={{ cursor: 'pointer' }}
               >
-                {categories.map((entry, index) => (
+                {pieData.map((entry, index) => (
                   <Cell
                     key={entry.name}
                     fill={entry.fill}
@@ -243,8 +266,8 @@ export function SpendByCategory({
         </div>
 
         {/* Legend + detail */}
-        <div className="flex-1 w-full space-y-2">
-          {categories.map((item) => {
+        <div className="flex-1 w-full space-y-2 max-h-[400px] overflow-y-auto pr-1">
+          {categories.slice(0, 10).map((item) => {
             const pct = total > 0 ? (item.value / total) * 100 : 0;
             const isSelected = selected?.name === item.name;
             return (
@@ -282,6 +305,27 @@ export function SpendByCategory({
               </button>
             );
           })}
+
+          {/* "Other" summary for remaining items */}
+          {categories.length > 10 && (() => {
+            const rest = categories.slice(10);
+            const restTotal = rest.reduce((s, i) => s + i.value, 0);
+            const restPct = total > 0 ? (restTotal / total) * 100 : 0;
+            return (
+              <div className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left bg-zinc-800/30">
+                <span className="w-3 h-3 rounded-full shrink-0 bg-zinc-600" />
+                <span className="flex-1 text-sm text-zinc-500">
+                  +{rest.length} other models
+                </span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-zinc-500 w-10 text-right">{restPct.toFixed(0)}%</span>
+                  <span className="text-sm font-semibold text-zinc-400 w-16 text-right tabular-nums">
+                    {formatCurrency(restTotal)}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Drill-down panel */}
           {selected && (
