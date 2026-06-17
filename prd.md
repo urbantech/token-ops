@@ -349,6 +349,26 @@ Classification enables:
 * Loop detection (brainstorming going in circles with rising cost)
 * Template reuse (specs that follow the same structure)
 
+### Tool Chain Deduplication (Bash Command Templating)
+
+**Requirement:** Detect expensive chains of similar bash/shell commands (git, grep, ls, cat, curl, psql, etc.) that agents call repeatedly across sessions, and wrap them into reusable zero-token scripts.
+
+**Problem:** Every time an agent runs `git status && git diff && git log --oneline -10`, it burns prompt tokens for the command text, completion tokens for the response parsing, and context tokens carrying the output. When this exact pattern repeats hundreds of times across agent sessions, the cumulative token waste is significant.
+
+**Solution:**
+1. **Pattern Detection** — Analyze `agent_run_log.actions_taken` and `agent_traces.attributes` to identify recurring bash command sequences (exact match and fuzzy similarity)
+2. **Template Generation** — For patterns that repeat >N times, auto-generate a shell script wrapper (e.g., `tokenops-git-status.sh`) that runs locally with zero LLM tokens
+3. **Savings Estimation** — Calculate: `(avg_tokens_per_call × call_frequency × cost_per_token)` to quantify savings per templated pattern
+4. **Script Registry** — Store generated scripts in ZeroDB, surface them in the dashboard as "automation candidates"
+5. **Integration** — MCP tool that agents can call (`tokenops_run_template`) instead of raw bash, eliminating the token overhead
+
+**Target savings:** Commands like `git status`, `ls`, `cat`, `grep` that are purely local and deterministic should NEVER burn LLM tokens after the first execution pattern is detected.
+
+**Data sources:**
+* `agent_run_log` (39K+ rows) — `actions_taken` JSON contains bash commands
+* `agent_traces` (370+ rows) — `attributes` JSON contains tool parameters
+* `llm_token_usage` (457K+ rows) — cross-reference to estimate per-call token cost
+
 Output:
 
 Savings Opportunities (classified by work type with targeted recommendations)
