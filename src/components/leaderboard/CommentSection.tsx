@@ -110,10 +110,21 @@ function VoteBar({ entryRank }: { entryRank: number }) {
   const [summary, setSummary] = useState<VoteSummary | null>(null);
 
   useEffect(() => {
-    fetch(`/api/comments/vote-summary?entryRank=${entryRank}`)
+    fetch('/api/comments/vote-summary')
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: VoteSummary | null) => {
-        if (data) setSummary(data);
+      .then((json) => {
+        if (!json?.data) return;
+        // API returns { success, data: [{ entryRank, agreeCount, disagreeCount, ... }] }
+        const match = (json.data as Array<Record<string, unknown>>).find(
+          (s) => Number(s.entryRank) === entryRank
+        );
+        if (match) {
+          setSummary({
+            entryRank,
+            agree: Number(match.agreeCount ?? 0),
+            disagree: Number(match.disagreeCount ?? 0),
+          });
+        }
       })
       .catch(() => null);
   }, [entryRank]);
@@ -456,8 +467,28 @@ export function CommentSection({ entryRank, className }: CommentSectionProps) {
       const qs = entryRank !== null ? `?entryRank=${entryRank}` : '';
       const res = await fetch(`/api/comments${qs}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data: Comment[] = await res.json();
-      setComments(threaded(data));
+      const json = await res.json();
+      // API returns { success, data: [{ id, userName, userImage, content, replies, ... }] }
+      const threads = (json.data ?? json ?? []) as Array<Record<string, unknown>>;
+      const mapped: Comment[] = threads.map((t) => ({
+        id: String(t.id ?? ''),
+        entryRank: t.entryRank as number | null,
+        parentId: t.parentId as string | null,
+        content: String(t.content ?? ''),
+        vote: (t.vote as 'agree' | 'disagree' | null) ?? null,
+        author: { name: String(t.userName ?? 'Anonymous'), image: t.userImage as string | null },
+        createdAt: String(t.createdAt ?? ''),
+        replies: ((t.replies ?? []) as Array<Record<string, unknown>>).map((r) => ({
+          id: String(r.id ?? ''),
+          entryRank: r.entryRank as number | null,
+          parentId: r.parentId as string | null,
+          content: String(r.content ?? ''),
+          vote: (r.vote as 'agree' | 'disagree' | null) ?? null,
+          author: { name: String(r.userName ?? 'Anonymous'), image: r.userImage as string | null },
+          createdAt: String(r.createdAt ?? ''),
+        })),
+      }));
+      setComments(threaded(mapped));
     } catch {
       setError('Could not load comments. Please try again.');
     } finally {
