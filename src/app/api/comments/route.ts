@@ -33,8 +33,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Require auth
-    const session = await getServerSession();
+    // Require auth — check session, return 401 if not signed in
+    let session: { user?: { name?: string | null; email?: string | null; image?: string | null; id?: string } } | null = null;
+    try {
+      session = await getServerSession();
+    } catch {
+      // NextAuth not configured yet — allow if dev/testing
+    }
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: 'Sign in required to comment' },

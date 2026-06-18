@@ -173,10 +173,11 @@ export class CommentsService {
 
   async getComments(entryRank: number | null): Promise<LeaderboardComment[]> {
     await ensureTables(this.client);
+    // ZeroDB JSON stores values as text — fetch all and filter client-side
     const result = await this.client.queryRows({
       tableName: TABLE_COMMENTS,
-      filters: entryRank != null ? { entry_rank: entryRank } : {},
-      limit: 200,
+      filters: {},
+      limit: 500,
     });
     const all = (result.rows ?? []).map(rowToComment).filter(c => !c.flagged);
 
@@ -184,7 +185,8 @@ export class CommentsService {
       // Overall comments: return only those with null entry_rank
       return all.filter(c => c.entryRank == null);
     }
-    return all;
+    // Filter by rank client-side (ZeroDB JSON doesn't support typed filters)
+    return all.filter(c => c.entryRank === entryRank);
   }
 
   async getComment(id: string): Promise<LeaderboardComment | null> {
