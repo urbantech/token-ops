@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, Fragment } from 'react'
 import { Trophy, ExternalLink, FlaskConical, TrendingDown, ArrowUpDown, MessageSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CommentSection } from '@/components/leaderboard/CommentSection'
@@ -375,9 +375,8 @@ export default function LeaderboardPage() {
                 const medal = entry.rank === 1 ? 'text-amber-400' : entry.rank === 2 ? 'text-zinc-300' : entry.rank === 3 ? 'text-orange-400' : 'text-zinc-600'
 
                 return (
-                  <>
+                  <Fragment key={entry.rank}>
                     <tr
-                      key={entry.rank}
                       className={`border-b border-zinc-800/50 cursor-pointer transition-colors ${
                         isExpanded ? 'bg-zinc-800/60' : 'hover:bg-zinc-800/40'
                       } ${entry.verdict === 'validated' ? 'bg-emerald-500/[0.02]' : ''}`}
@@ -453,7 +452,7 @@ export default function LeaderboardPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>
