@@ -424,7 +424,7 @@ export default function LeaderboardPage() {
                     </tr>
 
                     {isExpanded && (
-                      <tr key={`${entry.rank}-detail`} className="bg-zinc-800/40 border-b border-zinc-800/50">
+                      <tr key={`detail-${entry.rank}`} className="bg-zinc-800/40 border-b border-zinc-800/50">
                         <td colSpan={7} className="px-6 py-4">
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                             <div>
