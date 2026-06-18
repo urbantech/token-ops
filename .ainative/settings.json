@@ -1,0 +1,119 @@
+{
+  "$schema": "https://google-gemini.github.io/gemini-cli/schemas/settings.schema.json",
+  "version": "1.0.0",
+  "project": {
+    "name": "TokenOps",
+    "type": "web-application",
+    "framework": "nextjs",
+    "language": "typescript"
+  },
+  "paths": {
+    "root": "__REPO_ROOT__",
+    "backend": "__REPO_ROOT__/src",
+    "include_directories": [
+      "src",
+      "mcp-server",
+      "cron",
+      "public"
+    ],
+    "exclude_patterns": [
+      "node_modules",
+      ".next",
+      "dist",
+      "build",
+      "*.js.map",
+      "coverage"
+    ]
+  },
+  "context": {
+    "primary_context_file": ".ainative/README.md",
+    "supplementary_files": [
+      "CLAUDE.md",
+      ".ainative/RULES.md",
+      ".ainative/rules/coding-standards.md"
+    ],
+    "max_context_files": 10
+  },
+  "model": {
+    "default": "gemini-2.5-pro",
+    "context_window": "1M",
+    "temperature": 0.7,
+    "tool_output_summarization": true
+  },
+  "tools": {
+    "enabled": [
+      "file_read",
+      "file_write",
+      "shell",
+      "web_fetch",
+      "memory"
+    ],
+    "shell": {
+      "allowed_commands": [
+        "node",
+        "npm",
+        "npx",
+        "git",
+        "curl",
+        "grep",
+        "find",
+        "psql",
+        "railway"
+      ],
+      "working_directory": "__REPO_ROOT__"
+    }
+  },
+  "security": {
+    "trusted_folders": [
+      "__REPO_ROOT__"
+    ],
+    "sandbox_profile": "default"
+  },
+  "ui": {
+    "theme": "dark",
+    "show_citations": true,
+    "show_line_numbers": true
+  },
+  "privacy": {
+    "collect_usage_stats": false
+  },
+  "extensions": {
+    "mcp_servers": {
+      "zerodb": {
+        "enabled": true,
+        "description": "ZeroDB vector database, NoSQL tables, events"
+      },
+      "zeromemory": {
+        "enabled": true,
+        "description": "Semantic memory, context caching, deduplication"
+      },
+      "github": {
+        "enabled": true,
+        "description": "GitHub API integration"
+      }
+    }
+  },
+  "ai_coding_rules": {
+    "commit_style": {
+      "format": "bracketed-type",
+      "examples": [
+        "[FEATURE] Add leaderboard comments system",
+        "[BUG] Fix pie chart overflow with 42 models",
+        "[TEST] Add service tests for optimization engine",
+        "[REFACTOR] Extract comment moderation to service",
+        "[DOCS] Update PRD with tool chain deduplication",
+        "[DEVOPS] Add Railway cron for weekly optimization"
+      ]
+    },
+    "code_quality": {
+      "linting": "required",
+      "type_checking": "required",
+      "testing": "required_for_features",
+      "min_coverage": 80
+    }
+  },
+  "deployment": {
+    "target": "railway",
+    "production_url": "https://token-ops-production.up.railway.app"
+  }
+}

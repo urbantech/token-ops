@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { Trophy, ExternalLink, FlaskConical, TrendingDown, ArrowUpDown } from 'lucide-react'
+import { Trophy, ExternalLink, FlaskConical, TrendingDown, ArrowUpDown, MessageSquare } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { CommentSection } from '@/components/leaderboard/CommentSection'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -445,6 +446,10 @@ export default function LeaderboardPage() {
                               </p>
                             </div>
                           </div>
+                          {/* Row-level comments */}
+                          <div className="mt-4 pt-4 border-t border-zinc-700/50">
+                            <CommentSection entryRank={entry.rank} />
+                          </div>
                         </td>
                       </tr>
                     )}
@@ -463,6 +468,19 @@ export default function LeaderboardPage() {
             Click any row for full methodology. Data as of June 17, 2026.
           </p>
         </div>
+      </div>
+
+      {/* ── Community Discussion ─────────────────────────────────────────── */}
+      <div className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900 p-6">
+        <div className="flex items-center gap-2 mb-2">
+          <MessageSquare className="w-5 h-5 text-violet-400" />
+          <h2 className="text-lg font-semibold text-zinc-100">Community Discussion</h2>
+        </div>
+        <p className="text-sm text-zinc-500 mb-6">
+          Suggest new articles, repos, or videos with token reduction methods for us to test.
+          Discuss methodology, propose new benchmarks, or share your own results.
+        </p>
+        <CommentSection entryRank={null} />
       </div>
     </div>
   )
