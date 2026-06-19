@@ -100,12 +100,12 @@ See `settings.json` for MCP configuration.
 
 ---
 
-## Live URLs
+## Links
 
-- **App**: https://token-ops-production.up.railway.app
-- **API**: https://token-ops-production.up.railway.app/api/health
-- **Leaderboard**: https://token-ops-production.up.railway.app/leaderboard
 - **Repo**: https://github.com/AINative-Studio/token-ops
+- **App**: Deployed on Railway (see `NEXT_PUBLIC_APP_URL` env var)
+- **API Health**: `/api/health`
+- **Leaderboard**: `/leaderboard`
 
 ---
 

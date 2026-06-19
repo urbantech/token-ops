@@ -65,7 +65,7 @@ NEVER include "Claude", "Anthropic", "Generated with", "Co-Authored-By: Claude/C
 ## 7) Data Sources
 
 * **Real data**: AINative Core postgres (`llm_token_usage`, `agent_run_log`, `zerodb_vectors`, etc.)
-* **TokenOps data**: ZeroDB project `c1b49287-ce78-4f37-bdae-b7d65c826bc6`
+* **TokenOps data**: ZeroDB project (see `ZERODB_PROJECT_ID` env var)
 * **Never mock data in production** — fetch from APIs, fall back gracefully on error
 
 ---

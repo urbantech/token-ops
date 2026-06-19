@@ -113,7 +113,6 @@
     }
   },
   "deployment": {
-    "target": "railway",
-    "production_url": "https://token-ops-production.up.railway.app"
+    "target": "railway"
   }
 }
